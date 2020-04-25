@@ -1,8 +1,8 @@
 """ Base functions for monitor"""
 import os
+import re
 import time
 from subprocess import Popen, PIPE
-import re
 
 
 def get_uptime():
@@ -230,6 +230,11 @@ def get_hddtemp():
         except FileNotFoundError:
             pass
     return
+
+
+    def get_if():
+        """Parse ifconfig output"""
+        return
 
 
 def main():
