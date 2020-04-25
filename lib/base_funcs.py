@@ -2,6 +2,7 @@
 import os
 import time
 from subprocess import Popen, PIPE
+import re
 
 
 def get_uptime():
@@ -147,17 +148,29 @@ def get_cpufreqs():
 
 def get_power():
     """Used power"""
-    bats = [bat for bat in os.listdir('/sys/class/power_supply') if bat.startswith('BAT')]
+    bats = [bat for bat in os.listdir('/sys/class/power_supply') 
+            if bat.startswith('BAT')]
     power = {}
     for bat in bats:
         power[bat] = {}
-        with open(f'/sys/class/power_supply/{bat}/current_now', 'r') as f:
-            current = int(f.read().splitlines()[0])
-        with open(f'/sys/class/power_supply/{bat}/voltage_now', 'r') as f:
-            voltage = int(f.read().splitlines()[0])
-        power[bat]['voltage'] = voltage / 1000000
-        power[bat]['current'] = current / 1000000
-        power[bat]['power'] = current * voltage / 1000000000000
+        try:
+            with open(f'/sys/class/power_supply/{bat}/current_now', 'r') as f:
+                current = int(f.read().splitlines()[0]) / 1000000
+        except FileNotFoundError:
+            current = 0
+        try:
+            with open(f'/sys/class/power_supply/{bat}/voltage_now', 'r') as f:
+                voltage = int(f.read().splitlines()[0]) / 1000000
+        except FileNotFoundError:
+            current = 0
+        try:
+            with open(f'/sys/class/power_supply/{bat}/power_now', 'r') as f:
+                batpower = int(f.read().splitlines()[0]) / 1000000
+        except FileNotFoundError:
+            batpower = current * voltage
+        power[bat]['voltage'] = voltage
+        power[bat]['current'] = current
+        power[bat]['power'] = batpower
 
     power['total'] = sum([value['power'] for value in power.values()])
     return power
@@ -167,14 +180,16 @@ def get_sensors():
     """Get info from sensors"""
     process = Popen(['sensors'], stdout=PIPE, stderr=PIPE)
     stdout, stderr = process.communicate()
-    output = [line for line in stdout.decode('utf-8').split('\n') if line != '']
+    output = [line for line in stdout.decode('utf-8').split('\n') 
+              if line != '']
 
     sensors = {}
     # We need to find words Package, Core, CPU and Fan
     # I still do not want to use regexps :)
     for line in output:
         if ((line.find('Package') != -1) or (line.find('Core') != -1)
-             or (line.find('CPU') != -1) or (line.find('Fan') != -1)):
+             or (line.find('CPU') != -1) or (line.find('Fan') != -1)
+             or (line.find('fan') != -1)):
             line = line.split(':')
             sensor_id = line[0]
             metering = [token for token in line[1].replace('°', ' ').split(' ')
@@ -186,16 +201,38 @@ def get_sensors():
 
 def get_smart():
     """Parse smartctl output"""
+    """Get info from hddtemp"""
+    disks = sorted([disk for disk in os.listdir('/dev') 
+                    if (re.search(r'[hs]d\D+\b', disk) 
+                        or re.search(r'nvme[0-9]*\b', disk))])
+    print(disks)
+    for disk in disks:
+        try:
+            process = Popen(['smartctl', '-a', f'/dev/{disk}'], 
+                            stdout=PIPE, stderr=PIPE)
+            stdout, stderr = process.communicate()
+            stdout = stdout.decode('utf-8')
+            print(stdout)
+        except FileNotFoundError:
+            pass
     return
 
 
 def get_hddtemp():
     """Get info from hddtemp"""
-    disks = [disk for disk in os.listdir('/dev')  if ((disk[:2] == 'sd') or (disk[:2] == 'hd') or (disk[:3] == 'nvme'))]
+    disks = sorted([disk for disk in os.listdir('/dev') 
+                    if (re.search(r'[hs]d\D+\b', disk) 
+                        or re.search(r'nvme[0-9]*\b', disk))])
     print(disks)
-    # process = Popen(['sensors'], stdout=PIPE, stderr=PIPE)
-    # stdout, stderr = process.communicate()
-    # output = [line for line in stdout.decode('utf-8').split('\n') if line != '']
+    for disk in disks:
+        try:
+            process = Popen(['hddtemp', f'/dev/{disk}'], 
+                            stdout=PIPE, stderr=PIPE)
+            stdout, stderr = process.communicate()
+            stdout = stdout.decode('utf-8')
+            print(stdout)
+        except FileNotFoundError:
+            pass
     return
 
 
@@ -212,6 +249,7 @@ def main():
 
     print(get_sensors())
     print(get_hddtemp())
+    print(get_smart())
 
     end = time.time()
     print(end - start)
