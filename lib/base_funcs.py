@@ -185,11 +185,8 @@ def get_sensors():
 
     sensors = {}
     # We need to find words Package, Core, CPU and Fan
-    # I still do not want to use regexps :)
     for line in output:
-        if ((line.find('Package') != -1) or (line.find('Core') != -1)
-             or (line.find('CPU') != -1) or (line.find('Fan') != -1)
-             or (line.find('fan') != -1)):
+        if re.search(r'Package|Core|CPU|[Ff]an', line):
             line = line.split(':')
             sensor_id = line[0]
             metering = [token for token in line[1].replace('°', ' ').split(' ')
@@ -201,7 +198,6 @@ def get_sensors():
 
 def get_smart():
     """Parse smartctl output"""
-    """Get info from hddtemp"""
     disks = sorted([disk for disk in os.listdir('/dev') 
                     if (re.search(r'[hs]d\D+\b', disk) 
                         or re.search(r'nvme[0-9]*\b', disk))])
