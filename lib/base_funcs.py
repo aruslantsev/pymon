@@ -199,42 +199,79 @@ def get_sensors():
 def get_smart():
     """Parse smartctl output"""
     disks = sorted([disk for disk in os.listdir('/dev') 
-                    if (re.search(r'[hs]d\D+\b', disk) 
-                        or re.search(r'nvme[0-9]*\b', disk))])
-    print(disks)
+                    if (re.search(r'\b[hs]d\D\b', disk)
+                        or re.search(r'\bnvme[0-9]\b', disk))])
+    diskinfo = {}
     for disk in disks:
         try:
             process = Popen(['smartctl', '-a', f'/dev/{disk}'], 
                             stdout=PIPE, stderr=PIPE)
             stdout, stderr = process.communicate()
-            stdout = stdout.decode('utf-8')
-            print(stdout)
+            stdout = stdout.decode('utf-8').splitlines()
+
+            model = None
+            sn = None
+            smart_attrs = []
+
+            smart_start = False
+            value_position = None
+
+            for line in stdout:
+                if line.startswith('Device Model'):
+                    model = line.split(':')[1].lstrip(' ')
+                if line.startswith('Serial Number'):
+                    sn = line.split(':')[1].lstrip(' ')
+
+                if smart_start:
+                    if line == '':
+                        smart_start = False
+                    else:
+                        line = [token for token in line.split(' ')
+                                if token != '']
+                        smart_attrs.append(
+                            {'num': int(line[0]), 'name': line[1],
+                             'value': int(line[value_position])})
+
+                if not smart_start and line.startswith('ID# ATTRIBUTE_NAME'):
+                    smart_start = True
+                    value_position = len(
+                        [token for token in line.split(' ') if token != '']
+                    ) - 1
+
+            diskinfo[disk] = {
+                'model': model, 's/n': sn, 'attributes': smart_attrs}
         except FileNotFoundError:
             pass
+    return diskinfo
+
+
+def get_if():
+    """Parse ifconfig output"""
     return
 
 
-def get_hddtemp():
-    """Get info from hddtemp"""
-    disks = sorted([disk for disk in os.listdir('/dev') 
-                    if (re.search(r'[hs]d\D+\b', disk) 
-                        or re.search(r'nvme[0-9]*\b', disk))])
-    print(disks)
-    for disk in disks:
-        try:
-            process = Popen(['hddtemp', f'/dev/{disk}'], 
-                            stdout=PIPE, stderr=PIPE)
-            stdout, stderr = process.communicate()
-            stdout = stdout.decode('utf-8')
-            print(stdout)
-        except FileNotFoundError:
-            pass
-    return
+def get_users():
+    """Get number of users in system"""
+    process = Popen(['who'],
+                    stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    stdout = stdout.decode('utf-8').splitlines()
 
+    all_users = []
+    tty = 0
+    pts = 0
+    for line in stdout:
+        line = [token for token in line.split(' ') if token != '']
+        if line[0] not in all_users:
+            all_users.append(line[0])
+        if line[1].startswith('tty'):
+            tty += 1
+        if line[1].startswith('pts'):
+            pts += 1
 
-    def get_if():
-        """Parse ifconfig output"""
-        return
+    users = {'users': all_users, 'tty': tty,  'pts': pts, 'total': tty + pts}
+
+    return users
 
 
 def main():
@@ -247,10 +284,10 @@ def main():
     print(get_softirqstats())
     print(get_cpufreqs())
     print(get_power())
-
     print(get_sensors())
-    print(get_hddtemp())
     print(get_smart())
+
+    print(get_users())
 
     end = time.time()
     print(end - start)

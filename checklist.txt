@@ -3,7 +3,6 @@
         Disk latency per device
         Disk usage in percent
         Inode usage in percent
-        S.M.A.R.T values for drive sda
         Throughput per device
         Utilization per device
     network
@@ -21,47 +20,18 @@
         Available entropy
         File table usage
         Inode table usage
-        Logged in users
         Memory usage
         SELinux Access Vector Cache
         Swap in/out
     diskstats_iops
         disk
             IOs for /dev/sda
-            IOs for /dev/system/arch
-            IOs for /dev/system/docker
-            IOs for /dev/system/home
-            IOs for /dev/system/root
-            IOs for /dev/system/swap
-            IOs for /dev/system/vm
-            IOs for /dev/system/www
     diskstats_latency
         disk
             Average latency for /dev/sda
-            Average latency for /dev/system/arch
-            Average latency for /dev/system/docker
-            Average latency for /dev/system/home
-            Average latency for /dev/system/root
-            Average latency for /dev/system/swap
-            Average latency for /dev/system/vm
-            Average latency for /dev/system/www
     diskstats_throughput
         disk
             Disk throughput for /dev/sda
-            Disk throughput for /dev/system/arch
-            Disk throughput for /dev/system/docker
-            Disk throughput for /dev/system/home
-            Disk throughput for /dev/system/root
-            Disk throughput for /dev/system/swap
-            Disk throughput for /dev/system/vm
-            Disk throughput for /dev/system/www
     diskstats_utilization
         disk
             Disk utilization for /dev/sda
-            Disk utilization for /dev/system/arch
-            Disk utilization for /dev/system/docker
-            Disk utilization for /dev/system/home
-            Disk utilization for /dev/system/root
-            Disk utilization for /dev/system/swap
-            Disk utilization for /dev/system/vm
-            Disk utilization for /dev/system/www
