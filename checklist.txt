@@ -1,37 +1,11 @@
+TODO:
     disk
         Disk IOs per device
         Disk latency per device
-        Disk usage in percent
-        Inode usage in percent
         Throughput per device
         Utilization per device
     network
-        eth0 errors
-        eth0 traffic
         Firewall Throughput
-        HTTP loadtime of a page
-        Netstat
-    processes
-        Number of threads
-        Processes
-        Processes priority
-        VMstat
     system
         Available entropy
-        File table usage
-        Inode table usage
-        Memory usage
         SELinux Access Vector Cache
-        Swap in/out
-    diskstats_iops
-        disk
-            IOs for /dev/sda
-    diskstats_latency
-        disk
-            Average latency for /dev/sda
-    diskstats_throughput
-        disk
-            Disk throughput for /dev/sda
-    diskstats_utilization
-        disk
-            Disk utilization for /dev/sda

@@ -1,7 +1,7 @@
 """ Base functions for monitor"""
+import json
 import os
 import re
-import time
 from subprocess import Popen, PIPE
 
 
@@ -26,8 +26,8 @@ def get_la():
     lastid = int(la[4])
 
     return {'LA1': la1, 'LA5': la5, 'LA15': la15,
-            'running_proc': proc_run, 'total_proc': proc_total,
-            'last_pricid': lastid}
+            'running_processes': proc_run, 'total_processes': proc_total,
+            'last_processid': lastid}
 
 
 def get_cpustats():
@@ -50,22 +50,22 @@ def get_cpustats():
             cpustats[cpuid] = dict(zip(columns, cpuvalues))
 
         elif line.startswith('ctxt'):
-            cpustats['context_swithces'] = int(line.split(' ')[1])
+            cpustats['context_switches'] = int(line.split(' ')[1])
 
         elif line.startswith('processes'):
             cpustats['forks'] = int(line.split(' ')[1])
 
         elif line.startswith('procs_running'):
-            cpustats['proc_running'] = int(line.split(' ')[1])
+            cpustats['processes_running'] = int(line.split(' ')[1])
 
         elif line.startswith('procs_blocked'):
-            cpustats['proc_blocked'] = int(line.split(' ')[1])
+            cpustats['processes_blocked'] = int(line.split(' ')[1])
 
         elif line.startswith('intr'):
             cpustats['interrupts'] = int(line.split(' ')[1])
 
         elif line.startswith('softirq'):
-            cpustats['softirq'] = int(line.split(' ')[1])
+            cpustats['softirqs'] = int(line.split(' ')[1])
 
     return cpustats
 
@@ -83,7 +83,7 @@ def get_irqstats():
         tokens[0] = tokens[0].replace(':', '')
         int_num = tokens[0]
 
-        interrupt = {'number':
+        interrupt = {'sum':
                      sum([int(token) for token in tokens[1:(1 + cpus)]])}
 
         try:
@@ -108,7 +108,7 @@ def get_softirqstats():
 
     for line in lines[1:]:
         tokens = [token for token in line.split(' ') if token != '']
-        irq_name = tokens[0]
+        irq_name = tokens[0].replace(':', '')
         irq_num = sum([int(token) for token in tokens[1:]])
         softirqs[irq_name] = irq_num
 
@@ -126,23 +126,23 @@ def get_cpufreqs():
     for line in lines:
         if line.startswith('processor'):
             if cpuid is not None:
-                info[f'cpu{cpuid}'] = cpuinfo
+                info['cpu{}'.format(cpuid)] = cpuinfo
                 cpuinfo = {}
             cpuid = int(line.split(':')[1])
         if line.startswith('model name'):
             cpuinfo['name'] = line.split(' @ ')[0].split(': ')[1]
         if line.startswith('cpu MHz'):
             cpuinfo['frequency'] = float(line.split(': ')[1])
-    info[f'cpu{cpuid}'] = cpuinfo
+    info['cpu{}'.format(cpuid)] = cpuinfo
 
     path_prefix = '/sys/devices/system/cpu/cpufreq/'
     files = ['scaling_min_freq', 'scaling_max_freq', 'scaling_cur_freq']
     for cpuid in range(len(info.keys())):
-        path = path_prefix + f'policy{cpuid}/'
+        path = path_prefix + 'policy{}/'.format(cpuid)
         for file in files:
             with open(path + file, 'r') as f:
                 freq = int(f.read().splitlines()[0]) / 1000
-                info[f'cpu{cpuid}'][file] = freq
+                info['cpu{}'.format(cpuid)][file] = freq
     return info
 
 
@@ -154,17 +154,20 @@ def get_power():
     for bat in bats:
         power[bat] = {}
         try:
-            with open(f'/sys/class/power_supply/{bat}/current_now', 'r') as f:
+            with open('/sys/class/power_supply/{}/current_now'.format(
+                    bat), 'r') as f:
                 current = int(f.read().splitlines()[0]) / 1000000
         except FileNotFoundError:
             current = 0
         try:
-            with open(f'/sys/class/power_supply/{bat}/voltage_now', 'r') as f:
+            with open('/sys/class/power_supply/{}/voltage_now'.format(
+                    bat), 'r') as f:
                 voltage = int(f.read().splitlines()[0]) / 1000000
         except FileNotFoundError:
             current = 0
         try:
-            with open(f'/sys/class/power_supply/{bat}/power_now', 'r') as f:
+            with open('/sys/class/power_supply/{}/power_now'.format(
+                    bat), 'r') as f:
                 batpower = int(f.read().splitlines()[0]) / 1000000
         except FileNotFoundError:
             batpower = current * voltage
@@ -190,7 +193,7 @@ def get_sensors():
             line = line.split(':')
             sensor_id = line[0]
             metering = [token for token in line[1].replace('°', ' ').split(' ')
-                       if token != '']
+                        if token != '']
             sensors[sensor_id] = {'value': metering[0], 'unit': metering[1]}
 
     return sensors
@@ -204,7 +207,7 @@ def get_smart():
     diskinfo = {}
     for disk in disks:
         try:
-            process = Popen(['smartctl', '-a', f'/dev/{disk}'], 
+            process = Popen(['smartctl', '-i', '/dev/{}'.format(disk)],
                             stdout=PIPE, stderr=PIPE)
             stdout, stderr = process.communicate()
             stdout = stdout.decode('utf-8').splitlines()
@@ -222,17 +225,17 @@ def get_smart():
                 if line.startswith('Serial Number'):
                     sn = line.split(':')[1].lstrip(' ')
 
-                if smart_start:
-                    if line == '':
-                        smart_start = False
-                    else:
-                        line = [token for token in line.split(' ')
-                                if token != '']
-                        smart_attrs.append(
-                            {'num': int(line[0]), 'name': line[1],
-                             'value': int(line[value_position])})
+            process = Popen(['smartctl', '-A', '/dev/{}'.format(disk)],
+                            stdout=PIPE, stderr=PIPE)
+            stdout, stderr = process.communicate()
+            stdout = stdout.decode('utf-8').splitlines()
+            for line in stdout:
+                if smart_start and line != '':
+                    line = [token for token in line.split(' ') if token != '']
+                    smart_attrs.append({'num': int(line[0]), 'name': line[1],
+                                        'value': int(line[value_position])})
 
-                if not smart_start and line.startswith('ID# ATTRIBUTE_NAME'):
+                if not smart_start and line.startswith('ID#'):
                     smart_start = True
                     value_position = len(
                         [token for token in line.split(' ') if token != '']
@@ -245,15 +248,116 @@ def get_smart():
     return diskinfo
 
 
+def get_meminfo():
+    """Parse /proc/meminfo"""
+    with open('/proc/meminfo', 'r') as f:
+        lines = f.read().splitlines()
+
+    meminfo = {}
+    for line in lines:
+        line = [token for token in line.split(' ') if token != '']
+        if line[0] == 'MemTotal:':
+            meminfo['total'] = int(line[1])
+            meminfo['unit'] = line[2]
+        if line[0] == 'MemFree:':
+            meminfo['free'] = int(line[1])
+        if line[0] == 'MemAvailable:':
+            meminfo['available'] = int(line[1])
+        if line[0] == 'Buffers:':
+            meminfo['buffers'] = int(line[1])
+        if line[0] == 'Cached:':
+            meminfo['cached'] = int(line[1])
+        if line[0] == 'SwapTotal:':
+            meminfo['swaptotal'] = int(line[1])
+        if line[0] == 'SwapFree:':
+            meminfo['swapfree'] = int(line[1])
+        if line[0] == 'Dirty:':
+            meminfo['dirty'] = int(line[1])
+        if line[0] == 'Mapped:':
+            meminfo['mapped'] = int(line[1])
+        if line[0] == 'Shmem:':
+            meminfo['shmem'] = int(line[1])
+        if line[0] == 'Slab:':
+            meminfo['slab'] = int(line[1])
+        if line[0] == 'PageTables:':
+            meminfo['pagetbl'] = int(line[1])
+
+    return meminfo
+
+
 def get_if():
     """Parse ifconfig output"""
-    return
+    interfaces = os.listdir('/sys/class/net')
+    netstats = {}
+    for device in interfaces:
+        stats = {}
+        process = Popen(['ifconfig', device], stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        stdout = stdout.decode('utf-8').splitlines()
+        for line in stdout:
+            if 'RX' in line or 'TX' in line:
+                if 'RX' in line:
+                    prefix = 'rx_'
+                else:
+                    prefix = 'tx_'
+                line = [token for token in line.split(' ') if token != '']
+                for i, token in enumerate(line):
+                    if token == 'packets':
+                        stats[prefix + 'packets'] = int(line[i + 1])
+                    if token == 'bytes':
+                        stats[prefix + 'bytes'] = int(line[i + 1])
+                    if token == 'errors':
+                        stats[prefix + 'errors'] = int(line[i + 1])
+                    if token == 'dropped':
+                        stats[prefix + 'dropped'] = int(line[i + 1])
+
+        netstats[device] = stats
+    return netstats
+
+
+def get_netstat():
+    """Netstat"""
+    def analyze_out(out):
+        """analyze output lines"""
+        listen = 0
+        established = 0
+        for outline in out:
+            if 'LISTEN' in outline:
+                listen += 1
+            if 'ESTABLISHED' in outline:
+                established += 1
+        return listen, established
+
+    process = Popen(['netstat', '-au'], stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    stdout = stdout.decode('utf-8').splitlines()
+    udplisten, udpestablished = analyze_out(stdout)
+
+    process = Popen(['netstat', '-at'], stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    stdout = stdout.decode('utf-8').splitlines()
+    tcplisten, tcpestablished = analyze_out(stdout)
+
+    process = Popen(['netstat', '-ax'], stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    stdout = stdout.decode('utf-8').splitlines()
+    socklisten = 0
+    sockconn = 0
+    for line in stdout:
+        if 'LISTENING' in line:
+            socklisten += 1
+        if 'CONNECTED' in line:
+            sockconn += 1
+
+    netstat = {'tcp_listen': tcplisten, 'tcp_established': tcpestablished,
+               'udp_listen': udplisten, 'udp_established': udpestablished,
+               'sock_listen': socklisten, 'sock_connected': sockconn}
+    return netstat
 
 
 def get_users():
     """Get number of users in system"""
-    process = Popen(['who'],
-                    stdout=PIPE, stderr=PIPE)
+    process = Popen(['who'], stdout=PIPE, stderr=PIPE)
     stdout, stderr = process.communicate()
     stdout = stdout.decode('utf-8').splitlines()
 
@@ -274,23 +378,74 @@ def get_users():
     return users
 
 
+def get_diskstats():
+    """Disk usage"""
+    def parse_line(outline):
+        """parse line"""
+        outline = [token for token in outline.split(' ') if token != '']
+        total = int(outline[1])
+        used = int(outline[2])
+        avail = int(outline[3])
+        percent_used = int(outline[4].replace('%', '').replace('-', '0'))
+        return total, used, avail, percent_used
+
+    process = Popen(['df'], stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    stdout = stdout.decode('utf-8').splitlines()
+    mountpoints = []
+    devices = []
+    for line in stdout[1:]:
+        line = line.split(' ')
+        mountpoints.append(line[-1])
+        devices.append(line[0])
+
+    diskstats = {}
+    for mountpoint, device in zip(mountpoints, devices):
+        process = Popen(['df', '-k', mountpoint], stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        stdout = stdout.decode('utf-8').splitlines()[1]
+        kbtotal, kbused, kbavail, kbpercent = parse_line(stdout)
+
+        process = Popen(['df', '-i', mountpoint], stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        stdout = stdout.decode('utf-8').splitlines()[1]
+        itotal, iused, iavail, ipercent = parse_line(stdout)
+        diskstats[mountpoint] = {
+            'device': device,
+            'kb_total': kbtotal, 'kb_used': kbused,
+            'kb_avail': kbavail, 'kb_percent': kbpercent,
+            'inodes_total': itotal, 'inodes_used': iused,
+            'inodes_avail': iavail, 'inodes_percent': ipercent
+        }
+    return diskstats
+
+
+def collect_stats():
+    """Run all functions"""
+    sysstats = {}
+    sysstats.update(get_uptime())
+    sysstats.update(get_la())
+    sysstats.update({'cpustats': get_cpustats()})
+    sysstats.update({'IRQs': get_irqstats()})
+    sysstats.update({'SoftIRQs': get_softirqstats()})
+
+    return sysstats
+
+
 def main():
     """Main loop"""
-    start = time.time()
-    print(get_uptime())
-    print(get_la())
-    print(get_cpustats())
-    print(get_irqstats())
-    print(get_softirqstats())
+    stats = collect_stats()
+    print(json.dumps(stats, indent=2))
+
     print(get_cpufreqs())
     print(get_power())
     print(get_sensors())
     print(get_smart())
-
     print(get_users())
-
-    end = time.time()
-    print(end - start)
+    print(get_meminfo())
+    print(get_if())
+    print(get_netstat())
+    print(get_diskstats())
     return
 
 
