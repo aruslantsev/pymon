@@ -1,20 +1,16 @@
 """ Base functions for monitor"""
+import datetime
 import json
 import os
 import re
 from subprocess import Popen, PIPE
 
 
-def get_uptime() -> dict:
-    """ Get system uptime in seconds"""
+def get_baseinfo():
+    """Get load average"""
     with open('/proc/uptime', 'r') as f:
         times = f.read().splitlines()[0].split(' ')
     uptime = float(times[0])
-    return {'uptime': uptime}
-
-
-def get_la() -> dict:
-    """Get load average"""
     with open('/proc/loadavg', 'r') as f:
         la = f.read().splitlines()[0].split(' ')
     la1 = float(la[0])
@@ -25,7 +21,7 @@ def get_la() -> dict:
     proc_total = int(proc_raw[1])
     lastid = int(la[4])
 
-    return {'LA1': la1, 'LA5': la5, 'LA15': la15,
+    return {'uptime': uptime, 'LA1': la1, 'LA5': la5, 'LA15': la15,
             'running_processes': proc_run, 'total_processes': proc_total,
             'last_processid': lastid}
 
@@ -423,33 +419,27 @@ def get_netstat():
 def collect_stats():
     """Run all functions"""
     sysstats = {}
-    sysstats.update(get_uptime())
-    sysstats.update(get_la())
+    sysstats.update({'base': get_baseinfo()})
     sysstats.update({'cpustats': get_cpustats()})
     sysstats.update({'IRQs': get_irqstats()})
     sysstats.update({'SoftIRQs': get_softirqstats()})
-
-    return sysstats
+    sysstats.update({'meminfo': get_meminfo()})
+    sysstats.update({'disk': get_diskstats()})
+    sysstats.update({'users': get_users()})
+    sysstats.update({'sensors': get_sensors()})
+    sysstats.update({'SMART': get_smart()})
+    sysstats.update({'cpufreqs': get_cpufreqs()})
+    sysstats.update({'power': get_power()})
+    sysstats.update({'net_if': get_if()})
+    sysstats.update({'netstat': get_netstat()})
+    date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    return date, sysstats
 
 
 def main():
     """Main loop"""
-    stats = collect_stats()
-    print(json.dumps(stats, indent=2))
-
-    print(get_meminfo())
-    print(get_diskstats())
-    print(get_users())
-
-    print(get_sensors())
-    print(get_smart())
-
-    print(get_cpufreqs())
-    print(get_power())
-
-    print(get_if())
-    print(get_netstat())
-
+    date, stats = collect_stats()
+    print(json.dumps({date: stats}, indent=None))
     return
 
 
