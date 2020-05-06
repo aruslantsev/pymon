@@ -5,7 +5,7 @@ import re
 from subprocess import Popen, PIPE
 
 
-def get_uptime():
+def get_uptime() -> dict:
     """ Get system uptime in seconds"""
     with open('/proc/uptime', 'r') as f:
         times = f.read().splitlines()[0].split(' ')
@@ -13,7 +13,7 @@ def get_uptime():
     return {'uptime': uptime}
 
 
-def get_la():
+def get_la() -> dict:
     """Get load average"""
     with open('/proc/loadavg', 'r') as f:
         la = f.read().splitlines()[0].split(' ')
@@ -115,6 +115,177 @@ def get_softirqstats():
     return softirqs
 
 
+def get_meminfo():
+    """Parse /proc/meminfo"""
+    with open('/proc/meminfo', 'r') as f:
+        lines = f.read().splitlines()
+
+    meminfo = {}
+    for line in lines:
+        line = [token for token in line.split(' ') if token != '']
+        if line[0] == 'MemTotal:':
+            meminfo['total'] = int(line[1])
+            meminfo['unit'] = line[2]
+        if line[0] == 'MemFree:':
+            meminfo['free'] = int(line[1])
+        if line[0] == 'MemAvailable:':
+            meminfo['available'] = int(line[1])
+        if line[0] == 'Buffers:':
+            meminfo['buffers'] = int(line[1])
+        if line[0] == 'Cached:':
+            meminfo['cached'] = int(line[1])
+        if line[0] == 'SwapTotal:':
+            meminfo['swaptotal'] = int(line[1])
+        if line[0] == 'SwapFree:':
+            meminfo['swapfree'] = int(line[1])
+        if line[0] == 'Dirty:':
+            meminfo['dirty'] = int(line[1])
+        if line[0] == 'Mapped:':
+            meminfo['mapped'] = int(line[1])
+        if line[0] == 'Shmem:':
+            meminfo['shmem'] = int(line[1])
+        if line[0] == 'Slab:':
+            meminfo['slab'] = int(line[1])
+        if line[0] == 'PageTables:':
+            meminfo['pagetbl'] = int(line[1])
+
+    return meminfo
+
+
+def get_diskstats():
+    """Disk usage"""
+    def parse_line(outline):
+        """parse line"""
+        outline = [token for token in outline.split(' ') if token != '']
+        total = int(outline[1])
+        used = int(outline[2])
+        avail = int(outline[3])
+        percent_used = int(outline[4].replace('%', '').replace('-', '0'))
+        return total, used, avail, percent_used
+
+    process = Popen(['df'], stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    stdout = stdout.decode('utf-8').splitlines()
+    mountpoints = []
+    devices = []
+    for line in stdout[1:]:
+        line = line.split(' ')
+        mountpoints.append(line[-1])
+        devices.append(line[0])
+
+    diskstats = {}
+    for mountpoint, device in zip(mountpoints, devices):
+        process = Popen(['df', '-k', mountpoint], stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        stdout = stdout.decode('utf-8').splitlines()[1]
+        kbtotal, kbused, kbavail, kbpercent = parse_line(stdout)
+
+        process = Popen(['df', '-i', mountpoint], stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        stdout = stdout.decode('utf-8').splitlines()[1]
+        itotal, iused, iavail, ipercent = parse_line(stdout)
+        diskstats[mountpoint] = {
+            'device': device,
+            'kb_total': kbtotal, 'kb_used': kbused,
+            'kb_avail': kbavail, 'kb_percent': kbpercent,
+            'inodes_total': itotal, 'inodes_used': iused,
+            'inodes_avail': iavail, 'inodes_percent': ipercent
+        }
+    return diskstats
+
+
+def get_users():
+    """Get number of users in system"""
+    process = Popen(['who'], stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    stdout = stdout.decode('utf-8').splitlines()
+
+    all_users = []
+    tty = 0
+    pts = 0
+    for line in stdout:
+        line = [token for token in line.split(' ') if token != '']
+        if line[0] not in all_users:
+            all_users.append(line[0])
+        if line[1].startswith('tty'):
+            tty += 1
+        if line[1].startswith('pts'):
+            pts += 1
+
+    users = {'users': all_users, 'tty': tty,  'pts': pts, 'total': tty + pts}
+
+    return users
+
+
+def get_sensors():
+    """Get info from sensors"""
+    process = Popen(['sensors'], stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    output = [line for line in stdout.decode('utf-8').split('\n')
+              if line != '']
+
+    sensors = {}
+    # We need to find words Package, Core, CPU and Fan
+    for line in output:
+        if re.search(r'Package|Core|CPU|[Ff]an', line):
+            line = line.split(':')
+            sensor_id = line[0]
+            metering = [token for token in line[1].replace('°', ' ').split(' ')
+                        if token != '']
+            sensors[sensor_id] = {'value': metering[0], 'unit': metering[1]}
+
+    return sensors
+
+
+def get_smart():
+    """Parse smartctl output"""
+    disks = sorted([disk for disk in os.listdir('/dev')
+                    if (re.search(r'\b[hs]d\D\b', disk)
+                        or re.search(r'\bnvme[0-9]\b', disk))])
+    diskinfo = {}
+    for disk in disks:
+        try:
+            process = Popen(['smartctl', '-i', '/dev/{}'.format(disk)],
+                            stdout=PIPE, stderr=PIPE)
+            stdout, stderr = process.communicate()
+            stdout = stdout.decode('utf-8').splitlines()
+
+            model = None
+            sn = None
+            smart_attrs = []
+
+            smart_start = False
+            value_position = None
+
+            for line in stdout:
+                if line.startswith('Device Model'):
+                    model = line.split(':')[1].lstrip(' ')
+                if line.startswith('Serial Number'):
+                    sn = line.split(':')[1].lstrip(' ')
+
+            process = Popen(['smartctl', '-A', '/dev/{}'.format(disk)],
+                            stdout=PIPE, stderr=PIPE)
+            stdout, stderr = process.communicate()
+            stdout = stdout.decode('utf-8').splitlines()
+            for line in stdout:
+                if smart_start and line != '':
+                    line = [token for token in line.split(' ') if token != '']
+                    smart_attrs.append({'num': int(line[0]), 'name': line[1],
+                                        'value': int(line[value_position])})
+
+                if not smart_start and line.startswith('ID#'):
+                    smart_start = True
+                    value_position = len(
+                        [token for token in line.split(' ') if token != '']
+                    ) - 1
+
+            diskinfo[disk] = {
+                'model': model, 's/n': sn, 'attributes': smart_attrs}
+        except FileNotFoundError:
+            pass
+    return diskinfo
+
+
 def get_cpufreqs():
     """Get cpufreq"""
     info = {}
@@ -177,112 +348,6 @@ def get_power():
 
     power['total'] = sum([value['power'] for value in power.values()])
     return power
-
-
-def get_sensors():
-    """Get info from sensors"""
-    process = Popen(['sensors'], stdout=PIPE, stderr=PIPE)
-    stdout, stderr = process.communicate()
-    output = [line for line in stdout.decode('utf-8').split('\n') 
-              if line != '']
-
-    sensors = {}
-    # We need to find words Package, Core, CPU and Fan
-    for line in output:
-        if re.search(r'Package|Core|CPU|[Ff]an', line):
-            line = line.split(':')
-            sensor_id = line[0]
-            metering = [token for token in line[1].replace('°', ' ').split(' ')
-                        if token != '']
-            sensors[sensor_id] = {'value': metering[0], 'unit': metering[1]}
-
-    return sensors
-
-
-def get_smart():
-    """Parse smartctl output"""
-    disks = sorted([disk for disk in os.listdir('/dev') 
-                    if (re.search(r'\b[hs]d\D\b', disk)
-                        or re.search(r'\bnvme[0-9]\b', disk))])
-    diskinfo = {}
-    for disk in disks:
-        try:
-            process = Popen(['smartctl', '-i', '/dev/{}'.format(disk)],
-                            stdout=PIPE, stderr=PIPE)
-            stdout, stderr = process.communicate()
-            stdout = stdout.decode('utf-8').splitlines()
-
-            model = None
-            sn = None
-            smart_attrs = []
-
-            smart_start = False
-            value_position = None
-
-            for line in stdout:
-                if line.startswith('Device Model'):
-                    model = line.split(':')[1].lstrip(' ')
-                if line.startswith('Serial Number'):
-                    sn = line.split(':')[1].lstrip(' ')
-
-            process = Popen(['smartctl', '-A', '/dev/{}'.format(disk)],
-                            stdout=PIPE, stderr=PIPE)
-            stdout, stderr = process.communicate()
-            stdout = stdout.decode('utf-8').splitlines()
-            for line in stdout:
-                if smart_start and line != '':
-                    line = [token for token in line.split(' ') if token != '']
-                    smart_attrs.append({'num': int(line[0]), 'name': line[1],
-                                        'value': int(line[value_position])})
-
-                if not smart_start and line.startswith('ID#'):
-                    smart_start = True
-                    value_position = len(
-                        [token for token in line.split(' ') if token != '']
-                    ) - 1
-
-            diskinfo[disk] = {
-                'model': model, 's/n': sn, 'attributes': smart_attrs}
-        except FileNotFoundError:
-            pass
-    return diskinfo
-
-
-def get_meminfo():
-    """Parse /proc/meminfo"""
-    with open('/proc/meminfo', 'r') as f:
-        lines = f.read().splitlines()
-
-    meminfo = {}
-    for line in lines:
-        line = [token for token in line.split(' ') if token != '']
-        if line[0] == 'MemTotal:':
-            meminfo['total'] = int(line[1])
-            meminfo['unit'] = line[2]
-        if line[0] == 'MemFree:':
-            meminfo['free'] = int(line[1])
-        if line[0] == 'MemAvailable:':
-            meminfo['available'] = int(line[1])
-        if line[0] == 'Buffers:':
-            meminfo['buffers'] = int(line[1])
-        if line[0] == 'Cached:':
-            meminfo['cached'] = int(line[1])
-        if line[0] == 'SwapTotal:':
-            meminfo['swaptotal'] = int(line[1])
-        if line[0] == 'SwapFree:':
-            meminfo['swapfree'] = int(line[1])
-        if line[0] == 'Dirty:':
-            meminfo['dirty'] = int(line[1])
-        if line[0] == 'Mapped:':
-            meminfo['mapped'] = int(line[1])
-        if line[0] == 'Shmem:':
-            meminfo['shmem'] = int(line[1])
-        if line[0] == 'Slab:':
-            meminfo['slab'] = int(line[1])
-        if line[0] == 'PageTables:':
-            meminfo['pagetbl'] = int(line[1])
-
-    return meminfo
 
 
 def get_if():
@@ -355,71 +420,6 @@ def get_netstat():
     return netstat
 
 
-def get_users():
-    """Get number of users in system"""
-    process = Popen(['who'], stdout=PIPE, stderr=PIPE)
-    stdout, stderr = process.communicate()
-    stdout = stdout.decode('utf-8').splitlines()
-
-    all_users = []
-    tty = 0
-    pts = 0
-    for line in stdout:
-        line = [token for token in line.split(' ') if token != '']
-        if line[0] not in all_users:
-            all_users.append(line[0])
-        if line[1].startswith('tty'):
-            tty += 1
-        if line[1].startswith('pts'):
-            pts += 1
-
-    users = {'users': all_users, 'tty': tty,  'pts': pts, 'total': tty + pts}
-
-    return users
-
-
-def get_diskstats():
-    """Disk usage"""
-    def parse_line(outline):
-        """parse line"""
-        outline = [token for token in outline.split(' ') if token != '']
-        total = int(outline[1])
-        used = int(outline[2])
-        avail = int(outline[3])
-        percent_used = int(outline[4].replace('%', '').replace('-', '0'))
-        return total, used, avail, percent_used
-
-    process = Popen(['df'], stdout=PIPE, stderr=PIPE)
-    stdout, stderr = process.communicate()
-    stdout = stdout.decode('utf-8').splitlines()
-    mountpoints = []
-    devices = []
-    for line in stdout[1:]:
-        line = line.split(' ')
-        mountpoints.append(line[-1])
-        devices.append(line[0])
-
-    diskstats = {}
-    for mountpoint, device in zip(mountpoints, devices):
-        process = Popen(['df', '-k', mountpoint], stdout=PIPE, stderr=PIPE)
-        stdout, stderr = process.communicate()
-        stdout = stdout.decode('utf-8').splitlines()[1]
-        kbtotal, kbused, kbavail, kbpercent = parse_line(stdout)
-
-        process = Popen(['df', '-i', mountpoint], stdout=PIPE, stderr=PIPE)
-        stdout, stderr = process.communicate()
-        stdout = stdout.decode('utf-8').splitlines()[1]
-        itotal, iused, iavail, ipercent = parse_line(stdout)
-        diskstats[mountpoint] = {
-            'device': device,
-            'kb_total': kbtotal, 'kb_used': kbused,
-            'kb_avail': kbavail, 'kb_percent': kbpercent,
-            'inodes_total': itotal, 'inodes_used': iused,
-            'inodes_avail': iavail, 'inodes_percent': ipercent
-        }
-    return diskstats
-
-
 def collect_stats():
     """Run all functions"""
     sysstats = {}
@@ -437,15 +437,19 @@ def main():
     stats = collect_stats()
     print(json.dumps(stats, indent=2))
 
-    print(get_cpufreqs())
-    print(get_power())
+    print(get_meminfo())
+    print(get_diskstats())
+    print(get_users())
+
     print(get_sensors())
     print(get_smart())
-    print(get_users())
-    print(get_meminfo())
+
+    print(get_cpufreqs())
+    print(get_power())
+
     print(get_if())
     print(get_netstat())
-    print(get_diskstats())
+
     return
 
 
