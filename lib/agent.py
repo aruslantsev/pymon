@@ -6,13 +6,12 @@ import sys
 def main():
     """main"""
     if len(sys.argv) != 2:
-        print("This script takes exactly one argument. Run it as " + sys.argv[0] + " outfile'")
+        print("This script takes exactly one argument. Run it as " + sys.argv[0] + " outfile")
         sys.exit(1)
     fname = sys.argv[1]
-    f = open(fname, 'a')
-    date, stats = collect_stats()
-    f.write(str({date: stats}) + '\n')
-    f.close()
+    with open(fname, 'a') as f:
+        date, stats = collect_stats()
+        f.write(str({date: stats}) + '\n')
     sys.exit(0)
 
 
