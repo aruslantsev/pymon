@@ -1,10 +1,12 @@
-""" Base functions for monitor"""
+"""Base functions for monitor"""
 import datetime
 import json
 import os
 import re
 from subprocess import Popen, PIPE
 
+
+debug = False
 
 def get_baseinfo():
     """Get load average"""
@@ -426,10 +428,26 @@ def collect_stats():
     sysstats.update({'meminfo': get_meminfo()})
     sysstats.update({'disk': get_diskstats()})
     sysstats.update({'users': get_users()})
-    sysstats.update({'sensors': get_sensors()})
-    sysstats.update({'SMART': get_smart()})
-    sysstats.update({'cpufreqs': get_cpufreqs()})
-    sysstats.update({'power': get_power()})
+    try:
+        sysstats.update({'sensors': get_sensors()})
+    except Exception as e:
+        if debug:
+            print(e)
+    try:
+        sysstats.update({'SMART': get_smart()})
+    except Exception as e:
+        if debug:
+            print(e)
+    try:
+        sysstats.update({'cpufreqs': get_cpufreqs()})
+    except Exception as e:
+        if debug:
+            print(e)
+    try:
+        sysstats.update({'power': get_power()})
+    except Exception as e:
+        if debug:
+            print(e)
     sysstats.update({'net_if': get_if()})
     sysstats.update({'netstat': get_netstat()})
     date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
