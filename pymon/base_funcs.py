@@ -217,20 +217,25 @@ def get_users():
 
 def get_sensors():
     """Get info from sensors"""
-    process = Popen(['sensors'], stdout=PIPE, stderr=PIPE)
-    stdout, stderr = process.communicate()
-    output = [line for line in stdout.decode('utf-8').split('\n')
-              if line != '']
-
     sensors = {}
-    # We need to find words Package, Core, CPU and Fan
-    for line in output:
-        if re.search(r'Package|Core|CPU|[Ff]an', line):
-            line = line.split(':')
-            sensor_id = line[0]
-            metering = [token for token in line[1].replace('°', ' ').split(' ')
-                        if token != '']
-            sensors[sensor_id] = {'value': metering[0], 'unit': metering[1]}
+    
+    try:
+        process = Popen(['sensors'], stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        output = [line for line in stdout.decode('utf-8').split('\n')
+                  if line != '']
+        # We need to find words Package, Core, CPU and Fan
+        for line in output:
+            if re.search(r'Package|Core|CPU|[Ff]an', line):
+                line = line.split(':')
+                sensor_id = line[0]
+                metering = [token for token in 
+                            line[1].replace('°', ' ').split(' ') 
+                            if token != '']
+                sensors[sensor_id] = {'value': metering[0], 
+                                      'unit': metering[1]}
+    except FileNotFoundError:
+        pass
 
     return sensors
 
@@ -309,16 +314,23 @@ def get_cpufreqs():
     for cpuid in range(len(info.keys())):
         path = path_prefix + 'policy{}/'.format(cpuid)
         for file in files:
-            with open(path + file, 'r') as f:
-                freq = int(f.read().splitlines()[0]) / 1000
-                info['cpu{}'.format(cpuid)][file] = freq
+            try:
+                with open(path + file, 'r') as f:
+                    freq = int(f.read().splitlines()[0]) / 1000
+                    info['cpu{}'.format(cpuid)][file] = freq
+            except FileNotFoundError:
+                pass
     return info
 
 
 def get_power():
     """Used power"""
-    bats = [bat for bat in os.listdir('/sys/class/power_supply') 
-            if bat.startswith('BAT')]
+    try:
+        bats = [bat for bat in os.listdir('/sys/class/power_supply') 
+                if bat.startswith('BAT')]
+    except FileNotFoundError:
+        bats = []
+        
     power = {}
     for bat in bats:
         power[bat] = {}
