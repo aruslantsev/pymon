@@ -1,0 +1,3 @@
+#!/bin/bash
+
+/opt/bin/gethealth.sh /var/log/health.csv

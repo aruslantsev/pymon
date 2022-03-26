@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# This script is located in /etc/cron.daily
+
+/opt/bin/gethealth.sh /var/log/health.csv
